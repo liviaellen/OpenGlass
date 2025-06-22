@@ -14,13 +14,15 @@ function usePhotos(device: BluetoothRemoteGATTServer) {
 
     const capturePhoto = React.useCallback(async () => {
         try {
+            console.log('🔄 Manual photo capture started...');
             setIsCapturing(true);
             const service = await device.getPrimaryService('19B10000-E8F2-537E-4F6C-D104768A1214'.toLowerCase());
             const photoControlCharacteristic = await service.getCharacteristic('19b10006-e8f2-537e-4f6c-d104768a1214');
             // Send -1 to take a single photo
             await photoControlCharacteristic.writeValue(new Uint8Array([0xFF]));
+            console.log('📤 Photo capture command sent to ESP32');
         } catch (error) {
-            console.error('Failed to capture photo:', error);
+            console.error('❌ Failed to capture photo:', error);
         } finally {
             setIsCapturing(false);
         }
@@ -28,6 +30,7 @@ function usePhotos(device: BluetoothRemoteGATTServer) {
 
     React.useEffect(() => {
         (async () => {
+            console.log('🔗 Setting up BLE photo subscription...');
             let previousChunk = -1;
             let buffer: Uint8Array = new Uint8Array(0);
             function onChunk(id: number | null, data: Uint8Array) {
@@ -36,28 +39,35 @@ function usePhotos(device: BluetoothRemoteGATTServer) {
                     if (id === null) {
                         return;
                     } else if (id === 0) {
+                        console.log('📸 Starting new photo reception...');
                         previousChunk = 0;
                         buffer = new Uint8Array(0);
                     } else {
-                        console.warn('Unexpected first chunk id', id);
+                        console.warn('⚠️ Unexpected first chunk id', id);
                         return;
                     }
                 } else {
                     if (id === null) {
                         if (buffer.length === 0) {
-                            console.warn('Photo end received but buffer is empty');
+                            console.warn('⚠️ Photo end received but buffer is empty');
                         } else {
-                            console.log('Photo received', buffer);
+                            console.log('✅ Photo received, size:', buffer.length, 'bytes');
                             rotateImage(buffer, '270').then((rotated) => {
-                                console.log('Rotated photo', rotated);
-                                setPhotos((p) => [...p.slice(-9), rotated]); // Only keep last 10
+                                console.log('🔄 Photo rotated successfully');
+                                setPhotos((p) => {
+                                    const newPhotos = [...p.slice(-9), rotated];
+                                    console.log('📱 Total photos in app:', newPhotos.length);
+                                    return newPhotos;
+                                });
+                            }).catch(error => {
+                                console.error('❌ Failed to rotate photo:', error);
                             });
                         }
                         previousChunk = -1;
                         return;
                     } else {
                         if (id !== previousChunk + 1) {
-                            console.error('Invalid chunk', id, previousChunk, 'Dropping current photo buffer.');
+                            console.error('❌ Invalid chunk', id, previousChunk, 'Dropping current photo buffer.');
                             previousChunk = -1;
                             buffer = new Uint8Array(0);
                             return;
@@ -73,20 +83,24 @@ function usePhotos(device: BluetoothRemoteGATTServer) {
             const photoCharacteristic = await service.getCharacteristic('19b10005-e8f2-537e-4f6c-d104768a1214');
             await photoCharacteristic.startNotifications();
             setSubscribed(true);
+            console.log('✅ BLE photo subscription active');
             photoCharacteristic.addEventListener('characteristicvaluechanged', (e) => {
                 let value = (e.target as BluetoothRemoteGATTCharacteristic).value!;
                 let array = new Uint8Array(value.buffer);
                 if (array[0] == 0xff && array[1] == 0xff) {
+                    console.log('🏁 Photo end marker received');
                     onChunk(null, new Uint8Array());
                 } else {
                     let packetId = array[0] + (array[1] << 8);
                     let packet = array.slice(2);
+                    console.log('📦 Photo chunk received:', packetId, 'size:', packet.length);
                     onChunk(packetId, packet);
                 }
             });
             // Start automatic photo capture every 5s
             const photoControlCharacteristic = await service.getCharacteristic('19b10006-e8f2-537e-4f6c-d104768a1214');
             await photoControlCharacteristic.writeValue(new Uint8Array([0x05]));
+            console.log('🔄 Auto photo capture started (every 5s)');
         })();
     }, []);
     return [subscribed, photos, capturePhoto, isCapturing] as const;
@@ -276,7 +290,26 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
                             <Text style={{ color: '#888', marginTop: 10, fontSize: 16 }}>Processing...</Text>
                         </View>
                     )}
-                    {agentState.answer && !agentState.loading && (
+                    {agentState.error && !agentState.loading && (
+                        <View style={{ alignItems: 'center', padding: 10 }}>
+                            <Text style={{
+                                color: '#ff6b6b',
+                                fontSize: 16,
+                                textAlign: 'center',
+                                marginBottom: 10
+                            }}>
+                                ⚠️ {agentState.error}
+                            </Text>
+                            <Text style={{
+                                color: '#888',
+                                fontSize: 14,
+                                textAlign: 'center'
+                            }}>
+                                Make sure your OpenAI API key is set in the .env file
+                            </Text>
+                        </View>
+                    )}
+                    {agentState.answer && !agentState.loading && !agentState.error && (
                         <ScrollView
                             style={{ flexGrow: 1, flexBasis: 0 }}
                             showsVerticalScrollIndicator={false}
@@ -290,6 +323,17 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
                                 {agentState.answer}
                             </Text>
                         </ScrollView>
+                    )}
+                    {!agentState.loading && !agentState.answer && !agentState.error && (
+                        <View style={{ alignItems: 'center' }}>
+                            <Text style={{
+                                color: '#888',
+                                fontSize: 16,
+                                textAlign: 'center'
+                            }}>
+                                Ask me about what you see in the camera!
+                            </Text>
+                        </View>
                     )}
                 </View>
 

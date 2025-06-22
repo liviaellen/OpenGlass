@@ -1,5 +1,5 @@
 import axios from "axios";
-import fs from "fs";
+import * as fs from "fs";
 import { keys } from "../keys";
 
 export async function transcribeAudio(audioPath: string) {
@@ -81,8 +81,136 @@ export async function describeImage(imagePath: string) {
     }
 }
 
+// Convert Uint8Array to base64 string
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+    const binaryString = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+    return btoa(binaryString);
+}
+
+// New function to analyze images using OpenAI's GPT-4 Vision
+export async function analyzeImageWithVision(imageData: Uint8Array, prompt: string = "Describe what you see in this image in detail."): Promise<string> {
+    try {
+        console.log('🔍 OpenAI Vision: Analyzing image of', imageData.length, 'bytes');
+
+        const base64Image = uint8ArrayToBase64(imageData);
+        const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+
+        const response = await axios.post("https://api.openai.com/v1/chat/completions", {
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: prompt
+                        },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: dataUrl
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens: 1000
+        }, {
+            headers: {
+                'Authorization': `Bearer ${keys.openai}`,
+                'Content-Type': 'application/json'
+            },
+        });
+
+        console.log('✅ OpenAI Vision: Response received');
+        const content = response.data.choices?.[0]?.message?.content;
+        if (!content) {
+            throw new Error('No content in OpenAI Vision response');
+        }
+        return content;
+    } catch (error) {
+        console.error("❌ Error in analyzeImageWithVision:", error);
+        if (axios.isAxiosError(error)) {
+            console.error("❌ OpenAI Vision API Error:", error.response?.data);
+            if (error.response?.status === 401) {
+                throw new Error('Invalid OpenAI API key. Please check your .env file.');
+            } else if (error.response?.status === 429) {
+                throw new Error('OpenAI rate limit exceeded. Please try again later.');
+            } else if (error.response?.status === 402) {
+                throw new Error('OpenAI billing issue. Please check your account credits.');
+            }
+        }
+        throw new Error('Failed to analyze image with OpenAI Vision. Please try again.');
+    }
+}
+
+// New function to answer questions about multiple images using OpenAI's Vision
+export async function answerQuestionWithImages(question: string, images: Uint8Array[]): Promise<string> {
+    try {
+        console.log('🔍 OpenAI Vision: Answering question with', images.length, 'images');
+
+        const imageContents = images.map((imageData, index) => {
+            const base64Image = uint8ArrayToBase64(imageData);
+            const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+            return {
+                type: "image_url" as const,
+                image_url: {
+                    url: dataUrl
+                }
+            };
+        });
+
+        const response = await axios.post("https://api.openai.com/v1/chat/completions", {
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "system",
+                    content: "You are a helpful AI assistant that can see and analyze images. Answer questions based on what you observe in the provided images. Be concise and specific."
+                },
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: question
+                        },
+                        ...imageContents
+                    ]
+                }
+            ],
+            max_tokens: 1000
+        }, {
+            headers: {
+                'Authorization': `Bearer ${keys.openai}`,
+                'Content-Type': 'application/json'
+            },
+        });
+
+        console.log('✅ OpenAI Vision: Response received');
+        const content = response.data.choices?.[0]?.message?.content;
+        if (!content) {
+            throw new Error('No content in OpenAI Vision response');
+        }
+        return content;
+    } catch (error) {
+        console.error("❌ Error in answerQuestionWithImages:", error);
+        if (axios.isAxiosError(error)) {
+            console.error("❌ OpenAI Vision API Error:", error.response?.data);
+            if (error.response?.status === 401) {
+                throw new Error('Invalid OpenAI API key. Please check your .env file.');
+            } else if (error.response?.status === 429) {
+                throw new Error('OpenAI rate limit exceeded. Please try again later.');
+            } else if (error.response?.status === 402) {
+                throw new Error('OpenAI billing issue. Please check your account credits.');
+            }
+        }
+        throw new Error('Failed to answer question with OpenAI Vision. Please try again.');
+    }
+}
+
 export async function gptRequest(systemPrompt: string, userPrompt: string) {
     try {
+        console.log('🔗 OpenAI: Making request with key:', keys.openai ? 'Present' : 'Missing');
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
             model: "gpt-4o",
             messages: [
@@ -91,34 +219,29 @@ export async function gptRequest(systemPrompt: string, userPrompt: string) {
             ],
         }, {
             headers: {
-                'Authorization': `Bearer ${keys.openai}`,  // Replace YOUR_API_KEY with your actual OpenAI API key
+                'Authorization': `Bearer ${keys.openai}`,
                 'Content-Type': 'application/json'
             },
         });
-        return response.data;
+
+        console.log('✅ OpenAI: Response received:', response.data);
+        const content = response.data.choices?.[0]?.message?.content;
+        if (!content) {
+            throw new Error('No content in OpenAI response');
+        }
+        return content;
     } catch (error) {
-        console.error("Error in gptRequest:", error);
-        return null; // or handle error differently
+        console.error("❌ Error in gptRequest:", error);
+        if (axios.isAxiosError(error)) {
+            console.error("❌ OpenAI API Error:", error.response?.data);
+            if (error.response?.status === 401) {
+                throw new Error('Invalid OpenAI API key. Please check your .env file.');
+            } else if (error.response?.status === 429) {
+                throw new Error('OpenAI rate limit exceeded. Please try again later.');
+            } else if (error.response?.status === 402) {
+                throw new Error('OpenAI billing issue. Please check your account credits.');
+            }
+        }
+        throw new Error('Failed to get response from OpenAI. Please try again.');
     }
 }
-
-
-textToSpeech("Hello I am an agent")
-console.info(gptRequest(
-    `
-                You are a smart AI that need to read through description of a images and answer user's questions.
-
-                This are the provided images:
-                The image features a woman standing in an open space with a metal roof, possibly at a train station or another large building.
-                She is wearing a hat and appears to be looking up towards the sky.
-                The scene captures her attention as she gazes upwards, perhaps admiring something above her or simply enjoying the view from this elevated position.
-
-                DO NOT mention the images, scenes or descriptions in your answer, just answer the question.
-                DO NOT try to generalize or provide possible scenarios.
-                ONLY use the information in the description of the images to answer the question.
-                BE concise and specific.
-            `
-        ,
-            'where is the person?'
-
-))
