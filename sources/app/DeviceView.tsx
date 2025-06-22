@@ -5,6 +5,7 @@ import { toBase64Image } from '../utils/base64';
 import { Agent } from '../agent/Agent';
 import { InvalidateSync } from '../utils/invalidateSync';
 import { textToSpeech } from '../modules/openai';
+import { keys } from '../keys';
 
 function usePhotos(device: BluetoothRemoteGATTServer) {
     // Subscribe to device
@@ -106,6 +107,20 @@ function usePhotos(device: BluetoothRemoteGATTServer) {
     return [subscribed, photos, capturePhoto, isCapturing] as const;
 }
 
+// Helper function to check if a model is configured
+function isModelConfigured(model: string): boolean {
+    switch (model) {
+        case 'openai-vision':
+            return !!(keys.openai && keys.openai.trim() !== '');
+        case 'ollama-moondream':
+            return true; // Ollama runs locally
+        case 'groq-llama':
+            return !!(keys.groq && keys.groq.trim() !== '');
+        default:
+            return false;
+    }
+}
+
 export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer }) => {
     const [subscribed, photos, capturePhoto, isCapturing] = usePhotos(props.device);
     const agent = React.useMemo(() => new Agent(), []);
@@ -134,6 +149,8 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
     }, [agentState.answer])
 
     const latestPhoto = photos[photos.length - 1];
+    const currentModel = agent.getSelectedModel();
+    const isConfigured = isModelConfigured(currentModel);
 
     return (
         <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -278,6 +295,174 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
                 shadowRadius: 10,
                 elevation: 10
             }}>
+                {/* Simple Model Selector */}
+                <View style={{ marginBottom: 15 }}>
+                    <Text style={{ color: '#888', fontSize: 14, marginBottom: 8 }}>AI Model:</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                            style={{
+                                flex: 1,
+                                backgroundColor: currentModel === 'openai-vision'
+                                    ? 'rgba(255, 255, 255, 0.1)'
+                                    : 'rgba(48, 48, 48, 0.8)',
+                                borderRadius: 12,
+                                padding: 12,
+                                alignItems: 'center',
+                                borderWidth: 1,
+                                borderColor: currentModel === 'openai-vision'
+                                    ? 'rgba(255, 255, 255, 0.3)'
+                                    : 'rgba(255, 255, 255, 0.2)',
+                            }}
+                            onPress={() => agent.setModel('openai-vision')}
+                        >
+                            <Text style={{ fontSize: 16, marginBottom: 4 }}>🤖</Text>
+                            <Text style={{
+                                color: 'white',
+                                fontSize: 12,
+                                textAlign: 'center',
+                                fontWeight: currentModel === 'openai-vision' ? '600' : '500'
+                            }}>
+                                OpenAI Vision
+                            </Text>
+                            {!isModelConfigured('openai-vision') && (
+                                <Text style={{ color: '#ff6b6b', fontSize: 10, marginTop: 2 }}>⚠️ No Key</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={{
+                                flex: 1,
+                                backgroundColor: currentModel === 'ollama-moondream'
+                                    ? 'rgba(255, 255, 255, 0.1)'
+                                    : 'rgba(48, 48, 48, 0.8)',
+                                borderRadius: 12,
+                                padding: 12,
+                                alignItems: 'center',
+                                borderWidth: 1,
+                                borderColor: currentModel === 'ollama-moondream'
+                                    ? 'rgba(255, 255, 255, 0.3)'
+                                    : 'rgba(255, 255, 255, 0.2)',
+                            }}
+                            onPress={() => agent.setModel('ollama-moondream')}
+                        >
+                            <Text style={{ fontSize: 16, marginBottom: 4 }}>🏠</Text>
+                            <Text style={{
+                                color: 'white',
+                                fontSize: 12,
+                                textAlign: 'center',
+                                fontWeight: currentModel === 'ollama-moondream' ? '600' : '500'
+                            }}>
+                                Ollama
+                            </Text>
+                            <Text style={{ color: '#4CAF50', fontSize: 10, marginTop: 2 }}>✓ Local</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={{
+                                flex: 1,
+                                backgroundColor: currentModel === 'groq-llama'
+                                    ? 'rgba(255, 255, 255, 0.1)'
+                                    : 'rgba(48, 48, 48, 0.8)',
+                                borderRadius: 12,
+                                padding: 12,
+                                alignItems: 'center',
+                                borderWidth: 1,
+                                borderColor: currentModel === 'groq-llama'
+                                    ? 'rgba(255, 255, 255, 0.3)'
+                                    : 'rgba(255, 255, 255, 0.2)',
+                            }}
+                            onPress={() => agent.setModel('groq-llama')}
+                        >
+                            <Text style={{ fontSize: 16, marginBottom: 4 }}>⚡</Text>
+                            <Text style={{
+                                color: 'white',
+                                fontSize: 12,
+                                textAlign: 'center',
+                                fontWeight: currentModel === 'groq-llama' ? '600' : '500'
+                            }}>
+                                Groq
+                            </Text>
+                            {!isModelConfigured('groq-llama') && (
+                                <Text style={{ color: '#ff6b6b', fontSize: 10, marginTop: 2 }}>⚠️ No Key</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Configuration Status */}
+                {!isConfigured && (
+                    <View style={{
+                        backgroundColor: 'rgba(255, 107, 107, 0.1)',
+                        borderRadius: 12,
+                        padding: 12,
+                        marginBottom: 15,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 107, 107, 0.3)'
+                    }}>
+                        <Text style={{
+                            color: '#ff6b6b',
+                            fontSize: 14,
+                            fontWeight: '600',
+                            marginBottom: 4
+                        }}>
+                            ⚠️ Configuration Required
+                        </Text>
+                        <Text style={{
+                            color: '#ff6b6b',
+                            fontSize: 12,
+                            opacity: 0.9
+                        }}>
+                            {currentModel === 'openai-vision' && 'Add EXPO_PUBLIC_OPENAI_API_KEY to your .env file'}
+                            {currentModel === 'groq-llama' && 'Add EXPO_PUBLIC_GROQ_API_KEY to your .env file'}
+                            {currentModel === 'ollama-moondream' && 'Start Ollama and install the moondream model'}
+                        </Text>
+                    </View>
+                )}
+
+                {/* Ollama Setup Instructions */}
+                {currentModel === 'ollama-moondream' && (
+                    <View style={{
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        borderRadius: 12,
+                        padding: 12,
+                        marginBottom: 15,
+                        borderWidth: 1,
+                        borderColor: 'rgba(76, 175, 80, 0.3)'
+                    }}>
+                        <Text style={{
+                            color: '#4CAF50',
+                            fontSize: 14,
+                            fontWeight: '600',
+                            marginBottom: 4
+                        }}>
+                            🏠 Ollama Setup
+                        </Text>
+                        <Text style={{
+                            color: '#4CAF50',
+                            fontSize: 12,
+                            opacity: 0.9,
+                            marginBottom: 4
+                        }}>
+                            1. Install Ollama from ollama.ai
+                        </Text>
+                        <Text style={{
+                            color: '#4CAF50',
+                            fontSize: 12,
+                            opacity: 0.9,
+                            marginBottom: 4
+                        }}>
+                            2. Start Ollama: ollama serve
+                        </Text>
+                        <Text style={{
+                            color: '#4CAF50',
+                            fontSize: 12,
+                            opacity: 0.9
+                        }}>
+                            3. Install model: ollama pull moondream:1.8b-v2-fp16
+                        </Text>
+                    </View>
+                )}
+
                 <View style={{
                     minHeight: 100,
                     justifyContent: 'center',
@@ -305,7 +490,7 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
                                 fontSize: 14,
                                 textAlign: 'center'
                             }}>
-                                Make sure your OpenAI API key is set in the .env file
+                                Check the configuration status above
                             </Text>
                         </View>
                     )}
@@ -351,7 +536,7 @@ export const DeviceView = React.memo((props: { device: BluetoothRemoteGATTServer
                     }}
                     placeholder='Ask about what you see...'
                     placeholderTextColor={'#888'}
-                    readOnly={agentState.loading}
+                    readOnly={agentState.loading || !isConfigured}
                     onSubmitEditing={(e) => agent.answer(e.nativeEvent.text)}
                 />
             </View>
