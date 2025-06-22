@@ -1,5 +1,5 @@
 #define CAMERA_MODEL_XIAO_ESP32S3
-#include <I2S.h>
+#include "driver/i2s.h"
 #include <BLE2902.h>
 #include <BLEDevice.h>
 #include <BLEUtils.h>
@@ -293,10 +293,38 @@ static uint8_t *s_compressed_frame_2 = nullptr;
 
 void configure_microphone() {
 
-  // start I2S at 16 kHz with 16-bits per sample
-  I2S.setAllPins(-1, 42, 41, -1, -1);
-  if (!I2S.begin(PDM_MONO_MODE, SAMPLE_RATE, SAMPLE_BITS)) {
-    Serial.println("Failed to initialize I2S!");
+  // Configure I2S for PDM microphone
+  i2s_config_t i2s_config = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM),
+    .sample_rate = SAMPLE_RATE,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 4,
+    .dma_buf_len = 1024,
+    .use_apll = false,
+    .tx_desc_auto_clear = false,
+    .fixed_mclk = 0
+  };
+
+  i2s_pin_config_t pin_config = {
+    .bck_io_num = I2S_PIN_NO_CHANGE,
+    .ws_io_num = 42,  // PDM clock pin
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = 41   // PDM data pin
+  };
+
+  // Initialize I2S
+  esp_err_t err = i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
+  if (err != ESP_OK) {
+    Serial.println("Failed to install I2S driver!");
+    while (1); // do nothing
+  }
+
+  err = i2s_set_pin(I2S_NUM_0, &pin_config);
+  if (err != ESP_OK) {
+    Serial.println("Failed to set I2S pins!");
     while (1); // do nothing
   }
 
@@ -308,7 +336,11 @@ void configure_microphone() {
 
 size_t read_microphone() {
   size_t bytes_recorded = 0;
-  esp_i2s::i2s_read(esp_i2s::I2S_NUM_0, s_recording_buffer, recording_buffer_size, &bytes_recorded, portMAX_DELAY);
+  esp_err_t err = i2s_read(I2S_NUM_0, s_recording_buffer, recording_buffer_size, &bytes_recorded, portMAX_DELAY);
+  if (err != ESP_OK) {
+    Serial.println("Failed to read from I2S!");
+    return 0;
+  }
   return bytes_recorded;
 }
 
